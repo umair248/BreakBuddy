@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1097873748819",
+    "project_id": "breakbuddy-3ff7b",
+    "storage_bucket": "breakbuddy-3ff7b.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1097873748819:android:1039d81dbaaf756f5127a6",
+        "android_client_info": {
+          "package_name": "com.breakbuddy"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDaFtjnh4bPpaGmv4cCK-QF7BxybKvd-6Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

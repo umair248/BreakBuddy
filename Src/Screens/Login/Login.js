@@ -2,7 +2,6 @@ import {
   SafeAreaView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -15,6 +14,9 @@ import {useAppDispatch} from '../../services/redux/hooks';
 import {useHandleInputs} from '../../hooks/use-handle-input';
 import {showAlert} from '../../lib/helpers';
 import InputField from '../../components/common/input-field';
+import auth from '@react-native-firebase/auth'; // Import Firebase Auth
+import {userLoggedIn} from '../../services/redux/slices/user-slice';
+import database from '@react-native-firebase/database';
 
 const Login = props => {
   const dispatch = useAppDispatch();
@@ -46,27 +48,52 @@ const Login = props => {
   };
 
   const handleSubmit = async () => {
-    setLoading(false);
-    props.navigation.navigate('Home');
-    // const payload = inputs;
-    // authService
-    //   .login(payload)
-    //   .then(async res => {
-    //     const data = res?.data;
-    //     showAlert(data?.message);
-    //     await authService.setToken(data?.token);
-    //     dispatch(userLoggedIn(data.user));
-    //     navigation.navigate('Home');
-    //   })
-    //   .catch(err => {
-    //     getErrorMessageFromResponse(err);
-    //     setLoading(false);
-    //   });
+    setLoading(true);
+    try {
+      // Sign in with Firebase Auth
+      const userCredential = await auth().signInWithEmailAndPassword(
+        inputs.email,
+        inputs.password,
+      );
+      const user = userCredential.user;
+
+      // Fetch the user data from the Realtime Database
+      const userSnapshot = await database()
+        .ref(`users/${user.uid}`)
+        .once('value');
+
+      // Extract the actual data from the snapshot
+      const userData = userSnapshot.val();
+
+      // console.log('RESPONSE USER');
+      // console.log(user);
+
+      // Dispatch user data if needed
+      dispatch(
+        userLoggedIn({
+          uid: user.uid,
+          email: userData.email,
+          fullname: userData.fullname,
+          department: userData.department,
+        }),
+      );
+
+      // Navigate to Home
+      props.navigation.navigate('Root'); // Assuming 'Root' is your HomeTab
+    } catch (error) {
+      console.log('ERROR');
+      console.log(error);
+
+      // Handle errors
+      showAlert('Invalid Credentials', 'danger'); // Show error message
+      setLoading(false);
+    }
   };
+
   return (
     <SafeAreaView style={styles.BgView}>
       <View style={styles.MainView}>
-        <Text style={styles.SigninText}>Sign In Now</Text>
+        <Text style={styles.SigninText}>Login Now</Text>
 
         <View style={styles.ViewTextinp1}>
           <InputField
@@ -102,9 +129,10 @@ const Login = props => {
             onPress={() => {
               validate();
             }}
+            disabled={loading}
             style={styles.btnsignup}>
             <Text style={{color: 'white', fontWeight: '800', fontSize: 20}}>
-              Submit
+              {loading ? 'Loading...' : 'Submit'}
             </Text>
           </TouchableOpacity>
         </View>

@@ -2,7 +2,6 @@ import {
   SafeAreaView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -14,6 +13,11 @@ import {
 import {useAppDispatch} from '../../services/redux/hooks';
 import {useHandleInputs} from '../../hooks/use-handle-input';
 import InputField from '../../components/common/input-field';
+import auth from '@react-native-firebase/auth'; // Import Firebase Auth
+import {showAlert} from '../../lib/helpers'; // Ensure you have this helper for alerts
+import {firebase} from '@react-native-firebase/database';
+import {userLoggedIn} from '../../services/redux/slices/user-slice';
+import {database_path} from '../../services/apiPath';
 
 const Signup = props => {
   const dispatch = useAppDispatch();
@@ -41,7 +45,7 @@ const Signup = props => {
     }
 
     if (!inputs.department) {
-      handleError('Last name field required!', 'department');
+      handleError('Department field required!', 'department');
       isValid = false;
     }
 
@@ -58,23 +62,51 @@ const Signup = props => {
   };
 
   const handleSubmit = async () => {
-    setLoading(false);
-    props.navigation.navigate('Home');
-    // const payload = inputs;
-    // authService
-    //   .login(payload)
-    //   .then(async res => {
-    //     const data = res?.data;
-    //     showAlert(data?.message);
-    //     await authService.setToken(data?.token);
-    //     dispatch(userLoggedIn(data.user));
-    //     navigation.navigate('Home');
-    //   })
-    //   .catch(err => {
-    //     getErrorMessageFromResponse(err);
-    //     setLoading(false);
-    //   });
+    setLoading(true);
+    try {
+      // Create a new user with Firebase Auth
+      const userCredential = await auth().createUserWithEmailAndPassword(
+        inputs.email,
+        inputs.password,
+      );
+      const user = userCredential.user;
+      console.log('USER');
+      console.log(user);
+      // Save the user's fullname in the Realtime Database
+      await firebase
+        .app()
+        .database(database_path)
+        .ref(`users/${user.uid}`)
+        .set({
+          fullname: inputs.fullname,
+          email: inputs.email,
+          department: inputs.department,
+          createdAt: new Date().toISOString(),
+        });
+      showAlert('Registration Completed!');
+
+      // Dispatch user data if needed
+      dispatch(
+        userLoggedIn({
+          uid: user.uid,
+          email: user.email,
+          fullname: inputs.fullname,
+          department: inputs.department,
+        }),
+      );
+      props.navigation.navigate('Root');
+    } catch (error) {
+      if (error.code === 'auth/email-already-in-use') {
+        showAlert('This email address already in use!', 'danger'); // Show error message
+      }
+      if (error.code === 'auth/invalid-email') {
+        showAlert('That email address is invalid!', 'danger'); // Show error message
+      }
+    } finally {
+      setLoading(false);
+    }
   };
+
   return (
     <SafeAreaView style={styles.BgView}>
       <View style={styles.MainView}>
@@ -123,12 +155,11 @@ const Signup = props => {
         </View>
         <View style={styles.Viewbtn}>
           <TouchableOpacity
-            onPress={() => {
-              validate();
-            }}
+            disabled={loading}
+            onPress={validate}
             style={styles.btnsignup}>
             <Text style={{color: 'white', fontWeight: '800', fontSize: 20}}>
-              Register
+              {loading ? 'Registering...' : 'Register'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -159,14 +190,6 @@ const styles = StyleSheet.create({
     width: wp('80%'),
     paddingVertical: hp('2%'),
   },
-  Textinp1: {
-    borderColor: 'black',
-    borderWidth: 1,
-  },
-  Textinp2: {
-    borderColor: 'black',
-    borderWidth: 1,
-  },
   ViewTextinp2: {
     width: wp('80%'),
     paddingVertical: hp('2%'),
@@ -176,7 +199,6 @@ const styles = StyleSheet.create({
     paddingVertical: hp('2%'),
   },
   btnsignup: {
-    // width:wp('100%'),
     height: '25%',
     justifyContent: 'center',
     alignItems: 'center',
