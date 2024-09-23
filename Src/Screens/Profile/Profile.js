@@ -18,9 +18,12 @@ import auth from '@react-native-firebase/auth';
 import {showAlert} from '../../lib/helpers';
 import {firebase} from '@react-native-firebase/database';
 import {database_path} from '../../services/apiPath';
-import {userUpdate} from '../../services/redux/slices/user-slice';
+import {
+  clearUserData,
+  userUpdate,
+} from '../../services/redux/slices/user-slice';
 
-const Profile = () => {
+const Profile = props => {
   const currentUser = auth().currentUser;
   const user = useAppSelector(state => state.user.user);
   const dispatch = useAppDispatch();
@@ -28,14 +31,14 @@ const Profile = () => {
   const [inputs, handleInputs, setInputs, errors, handleError] =
     useHandleInputs({
       fullname: user?.fullname || '',
-      email: user?.email || '',
+      // email: user?.email || '',
       department: user?.department || '',
     });
 
   useEffect(() => {
     setInputs({
       fullname: user?.fullname || '',
-      email: user?.email || '',
+      // email: user?.email || '',
       department: user?.department || '',
     });
   }, [user]);
@@ -49,10 +52,10 @@ const Profile = () => {
       isValid = false;
     }
 
-    if (!inputs.email) {
-      handleError('Email field required!', 'email');
-      isValid = false;
-    }
+    // if (!inputs.email) {
+    //   handleError('Email field required!', 'email');
+    //   isValid = false;
+    // }
 
     if (!inputs.department) {
       handleError('Department field required!', 'department');
@@ -79,6 +82,10 @@ const Profile = () => {
           department: inputs.department,
         });
 
+      // if (currentUser.email !== inputs.email) {
+      //   await currentUser.updateEmail(inputs.email);
+      // }
+
       showAlert('Record Updated!');
 
       dispatch(
@@ -101,9 +108,27 @@ const Profile = () => {
       setLoading(false);
     }
   };
+
+  const useLogout = () => {
+    try {
+      auth()
+        .signOut()
+        .then(() => console.log('User signed out!'));
+
+      dispatch(clearUserData());
+
+      showAlert('User logged out!');
+
+      props.navigation.navigate('Splash');
+    } catch (error) {}
+  };
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.logoutButton}>
+      <TouchableOpacity
+        onPress={() => {
+          useLogout();
+        }}
+        style={styles.logoutButton}>
         <Text style={styles.logoutText}>Log out</Text>
       </TouchableOpacity>
       <View style={styles.profileContainer}>
@@ -127,7 +152,7 @@ const Profile = () => {
           value={inputs?.fullname || ''}
         />
       </View>
-      <View style={styles.ViewTextinp}>
+      {/* <View style={styles.ViewTextinp}>
         <InputField
           placeholder="Enter your email"
           onChange={e => {
@@ -137,7 +162,7 @@ const Profile = () => {
           error={errors.email}
           value={inputs?.email || ''}
         />
-      </View>
+      </View> */}
       <View style={styles.ViewTextinp}>
         <InputField
           placeholder="Enter your department"
@@ -149,11 +174,6 @@ const Profile = () => {
           value={inputs?.department || ''}
         />
       </View>
-      {/* <Text style={styles.profileTitle}>Profile</Text>
-      <TextInput style={styles.input} placeholder="Mario Foster" />
-      <TextInput style={styles.input} placeholder="marioft@gmail.com" />
-      <TextInput style={styles.input} placeholder="Department" />
-      <TextInput style={styles.input} placeholder="mario23%$" secureTextEntry /> */}
       <TouchableOpacity
         disabled={loading}
         onPress={validate}
