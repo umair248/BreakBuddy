@@ -1,97 +1,192 @@
-import React, { useState } from 'react';
-import { View, Text, Button, FlatList, StyleSheet,TouchableOpacity } from 'react-native';
-import { red } from 'react-native-reanimated/lib/typescript/Colors';
+import React, {useEffect, useState} from 'react';
+import {View, Text, StyleSheet, TouchableOpacity} from 'react-native';
+import {firebase} from '@react-native-firebase/database';
+import {database_path} from '../../services/apiPath';
+import auth from '@react-native-firebase/auth';
+import {showAlert} from '../../lib/helpers';
+import moment from 'moment';
 
-const BreakRecords = () => {
-  const [records, setRecords] = useState([
-    // Sample data, replace with your actual data
-    { teamName: 'Team Name 1', requestStatus: 'Approved', date: '01-01-2024',time:'01:40 -02:30pm' },
-    { teamName: 'Team Name 2', requestStatus: 'Rejected', date: '02-01-2024',time:'01:40 -02:30pm' },
-    // ...
-  ]);
-
-  const renderRecord = ({ item }) => (
-    <View style={styles.recordContainer}>
-      <Text style={styles.teamName}>{item.teamName}</Text>
-      <Text style={styles.requestStatus}>{item.requestStatus}</Text>
-      <View style={{flexDirection:'column'}}>
-      <Text style={styles.date}>{item.date}</Text>
-      <Text style={{color:"red"}}>{item.time}</Text>
+const NotificationItem = ({item, onApprove}) => {
+  return (
+    <View style={styles.notificationContainer}>
+      <Text style={styles.teamNameText}>{item?.user?.fullname}</Text>
+      <View style={styles.timeContainer}>
+        <Text style={styles.timeText}>{item.break_duration} Minutes Break</Text>
       </View>
-      <TouchableOpacity style={{width:'20%',height:40,backgroundColor:'#FD932F',justifyContent:'center',alignItems:'center'}}>
-        <Text style={{color:'white',fontSize:20}}>Delete</Text>
-        </TouchableOpacity>
-      {/* <Button title="Delete" onPress={() => handleDeleteRecord(item)} /> */}
+      <Text style={styles.teamNameText}>{item?.break_area}</Text>
+      <Text style={styles.teamNameText}>
+        {moment(item?.createAt).format('Do MMM YYYY, h:mm A')}
+      </Text>
+      <View style={styles.buttonContainer}>
+        <View style={styles.rejectButton}>
+          <Text style={[styles.buttonText, {textTransform: 'capitalize'}]}>
+            {item?.status}
+          </Text>
+        </View>
+        {/* onPress={onApprove} */}
+        {/* <TouchableOpacity style={styles.rejectButton} onPress={onReject}>
+          <Text style={styles.buttonText}>Reject</Text>
+        </TouchableOpacity> */}
+      </View>
     </View>
   );
+};
 
-  const handleDeleteRecord = (record) => {
-    // Handle deleting the record (e.g., remove from list, update database)
+const BreakRecords = () => {
+  const [data, setData] = useState([]);
+
+  const fetchBreakRequest = async () => {
+    const ref = firebase
+      .app()
+      .database(database_path)
+      .ref('break_times')
+      .orderByChild('uid')
+      .equalTo(auth().currentUser.uid); // Filter by 'pending' status
+
+    try {
+      const snapshot = await ref.once('value');
+      if (snapshot.exists()) {
+        const breakRequests = snapshot.val();
+        const sortedBreakRequests = Object.values(breakRequests)
+          .filter(breakRequest => breakRequest.createdAt) // Ensure createdAt exists
+          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); // Sort by createdAt in descending order
+
+        // Fetch user data for each break request
+        const breakRequestsWithUserData = await Promise.all(
+          sortedBreakRequests.map(async request => {
+            const userSnapshot = await firebase
+              .app()
+              .database(database_path)
+              .ref(`users/${request.uid}`)
+              .once('value');
+
+            const userData = userSnapshot.val();
+
+            return {
+              ...request,
+              user: userData, // Add user data to the request object
+            };
+          }),
+        );
+
+        setData(breakRequestsWithUserData);
+        console.log(breakRequestsWithUserData); // Handle the sorted data as needed
+      } else {
+        console.log('No pending break requests found.');
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    }
+  };
+  useEffect(() => {
+    fetchBreakRequest();
+  }, []);
+
+  const notificationsData = [
+    {time: '01:30 - 02:15 pm', teamName: 'Team Name'},
+    // ... other notifications
+  ];
+
+  const handleApprove = async item => {
+    try {
+    } catch (error) {
+      console.log(error);
+      // Handle errors
+      showAlert(error.message, 'danger'); // Assuming you have a showAlert function for error messages
+    }
+  };
+
+  const handleReject = notification => {
+    // Handle rejection logic
   };
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Break Records</Text>
-      <Text style={styles.description}>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Suspendisse tempus leo nec consectetur.</Text>
-      <FlatList
-        data={records}
-        renderItem={renderRecord}
-        keyExtractor={(item) => item.id}
-      />
-      <View style={styles.bottomNav}>
-        {/* Bottom navigation buttons */}
+      <View style={styles.notificationsList}>
+        {data.map((item, index) => (
+          <NotificationItem key={index} onApprove={handleApprove} item={item} />
+        ))}
+
+        {data.length <= 0 ? (
+          <>
+            <View style={styles.MainView}>
+              <Text style={[styles.SigninText, {textAlign: 'center'}]}>
+                No record found!
+              </Text>
+            </View>
+          </>
+        ) : (
+          <></>
+        )}
       </View>
     </View>
   );
-
 };
+
 const styles = StyleSheet.create({
+  MainView: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   container: {
     flex: 1,
-    backgroundColor: '#fff', // White background
-    padding:4
+    backgroundColor: '#fff', // Background color
+    padding: 20,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#007766', // Primary green color
     marginBottom: 10,
   },
-  description: {
-    color: '#333', // Dark gray text
-    marginBottom: 20,
+  notificationsList: {
+    flex: 1,
   },
-  recordContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 10,
-    borderBottomWidth: 1,
-    borderColor: '#ccc', // Light gray border
+  notificationContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  teamName: {
+  timeContainer: {
+    backgroundColor: '#f0f0f0',
+    padding: 8,
+    borderRadius: 4,
+    marginBottom: 8,
+  },
+  timeText: {
+    color: '#333',
     fontWeight: 'bold',
   },
-  requestStatus: {
-    color: '#007766', // Primary green color for approved, red for rejected
+  teamNameText: {
+    color: '#666',
+    marginBottom: 8,
   },
-  date: {
-    color: '#666', // Light gray text
-  },
-  deleteButton: {
-    backgroundColor: '#007766', // Primary green button
-    padding: 10,
-    borderRadius: 5,
-  },
-  bottomNav: {
+  buttonContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#fff',
+    justifyContent: 'flex-end',
+  },
+  approveButton: {
+    backgroundColor: '#4CAF50', // Green
     padding: 10,
+    borderRadius: 4,
+  },
+  rejectButton: {
+    // backgroundColor: '#FF5722', // Red
+    backgroundColor: '#4CAF50',
+    padding: 10,
+    borderRadius: 4,
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: 'bold',
   },
 });
+
 export default BreakRecords;

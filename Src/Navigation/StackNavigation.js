@@ -64,9 +64,6 @@ const HomeTab = () => {
 
 const RootNavigator = () => {
   const user = useAppSelector(state => state.user.user);
-  console.log('USER NAV DATA');
-  console.log(user);
-
   return (
     <Stack.Navigator initialRouteName="Splash">
       <Stack.Screen

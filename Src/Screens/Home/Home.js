@@ -19,12 +19,13 @@ import {firebase} from '@react-native-firebase/database';
 import {database_path} from '../../services/apiPath';
 import auth from '@react-native-firebase/auth';
 import {CountdownCircleTimer} from 'react-native-countdown-circle-timer';
+import {showAlert} from '../../lib/helpers';
 
 const Home = () => {
   const user = useAppSelector(state => state.user.user);
-  const dispatch = useAppDispatch();
   const [loading, setLoading] = useState(false);
   const [isRequestSubmit, setIsRequestSubmit] = useState(0);
+  const [selectedRequest, setSelectedRequest] = useState(null);
   const [inputs, handleInputs, setInputs, errors, handleError] =
     useHandleInputs({
       break_duration: '',
@@ -71,15 +72,35 @@ const Home = () => {
           .limitToLast(1);
 
         // Real-time listener
-        ref.on('value', snapshot => {
+        ref.on('value', async snapshot => {
           if (snapshot.exists()) {
             const breakRequests = snapshot.val();
             const lastRequest = Object.values(breakRequests)[0]; // Get the latest request
 
+            const now = new Date();
+            const acceptAt = lastRequest.acceptAt
+              ? new Date(lastRequest.acceptAt)
+              : null;
+            const breakDurationMs = lastRequest.break_duration * 60 * 1000;
+
             if (lastRequest.status === 'pending') {
+              setSelectedRequest(lastRequest);
               setIsRequestSubmit(1); // Set to true if last request is pending
             } else if (lastRequest.status === 'accepted') {
-              setIsRequestSubmit(2); // Reset if no pending requests
+              if (now - acceptAt >= breakDurationMs) {
+                // Update the status in Firebase to 'accepted' and reset `setIsRequestSubmit`
+                await firebase
+                  .app()
+                  .database(database_path)
+                  .ref(`break_times/${lastRequest.id}`)
+                  .update({
+                    status: 'ended',
+                  });
+                setIsRequestSubmit(0); // Reset request submission
+              } else {
+                setSelectedRequest(lastRequest);
+                setIsRequestSubmit(2); // Break is ongoing
+              }
             } else {
               setIsRequestSubmit(0); // Reset if no pending requests
             }
@@ -98,7 +119,7 @@ const Home = () => {
   }, []);
 
   const handleSubmit = async () => {
-    setLoading(false);
+    setLoading(true);
     try {
       const newBreakRequest = {
         id: firebase
@@ -118,7 +139,9 @@ const Home = () => {
       };
 
       // Store the break request in the database
-      await database()
+      await firebase
+        .app()
+        .database(database_path)
         .ref(`break_times/${newBreakRequest.id}`)
         .set(newBreakRequest);
 
@@ -134,10 +157,32 @@ const Home = () => {
 
       setIsRequestSubmit(1);
     } catch (error) {
+      console.log(error);
       // Handle errors
-      showAlert(error.message); // Assuming you have a showAlert function for error messages
+      showAlert(error.message, 'danger'); // Assuming you have a showAlert function for error messages
     } finally {
       setLoading(false); // Reset the loading state
+    }
+  };
+
+  const cancelRequest = async (status = 'cancelled') => {
+    setLoading(true);
+    try {
+      await firebase
+        .app()
+        .database(database_path)
+        .ref(`break_times/${selectedRequest?.id}`)
+        .update({
+          status: status,
+        });
+      showAlert('Request Cancelled!');
+      setIsRequestSubmit(0);
+    } catch (error) {
+      console.log(error);
+      // Handle errors
+      showAlert(error.message, 'danger'); // Assuming you have a showAlert function for error messages
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -164,7 +209,10 @@ const Home = () => {
             </Text>
             <CountdownCircleTimer
               isPlaying={true}
-              duration={30}
+              duration={selectedRequest?.break_duration * 60}
+              onComplete={() => {
+                cancelRequest('ended');
+              }}
               colors="#116363">
               {({remainingTime}) => (
                 <Text style={{fontSize: 30}}>{remainingTime}</Text>
@@ -234,6 +282,16 @@ const Home = () => {
             <Text style={[styles.SigninText, {textAlign: 'center'}]}>
               Waiting for someone to accept the request!
             </Text>
+            <View style={styles.Viewbtn}>
+              <TouchableOpacity
+                disabled={loading}
+                onPress={cancelRequest}
+                style={styles.btnsignup}>
+                <Text style={{color: 'white', fontWeight: '800', fontSize: 16}}>
+                  {loading ? 'Loading...' : 'Cancel Request'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </>
       ) : (
