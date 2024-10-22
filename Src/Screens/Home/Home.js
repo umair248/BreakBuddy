@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   View,
   Image,
+  FlatList,
 } from 'react-native';
 import React, {useEffect, useState} from 'react';
 import {
@@ -31,6 +32,7 @@ const Home = () => {
       break_duration: '',
       break_area: '',
       notes: '',
+      accepted_by_uid: '',
     });
 
   const validate = () => {
@@ -51,7 +53,9 @@ const Home = () => {
     }
 
     if (isValid) {
-      handleSubmit();
+      setIsRequestSubmit(1);
+      setLoading(false);
+      // handleSubmit();
     } else {
       setLoading(false);
     }
@@ -85,7 +89,7 @@ const Home = () => {
 
             if (lastRequest.status === 'pending') {
               setSelectedRequest(lastRequest);
-              setIsRequestSubmit(1); // Set to true if last request is pending
+              setIsRequestSubmit(2); // Set to true if last request is pending
             } else if (lastRequest.status === 'accepted') {
               if (now - acceptAt >= breakDurationMs) {
                 // Update the status in Firebase to 'accepted' and reset `setIsRequestSubmit`
@@ -99,7 +103,7 @@ const Home = () => {
                 setIsRequestSubmit(0); // Reset request submission
               } else {
                 setSelectedRequest(lastRequest);
-                setIsRequestSubmit(2); // Break is ongoing
+                setIsRequestSubmit(3); // Break is ongoing
               }
             } else {
               setIsRequestSubmit(0); // Reset if no pending requests
@@ -129,7 +133,7 @@ const Home = () => {
           .child('break_times')
           .push().key, // generate a unique id
         uid: auth().currentUser.uid, // current user submitting the request
-        accepted_by_uid: null, // initially, no one has accepted it
+        accepted_by_uid: inputs.accepted_by_uid || null, // initially, no one has accepted it
         break_duration: Number(inputs.break_duration),
         break_area: inputs.break_area,
         notes: inputs.notes || null, // notes can be nullable
@@ -155,7 +159,7 @@ const Home = () => {
         notes: '',
       });
 
-      setIsRequestSubmit(1);
+      setIsRequestSubmit(2);
     } catch (error) {
       console.log(error);
       // Handle errors
@@ -186,6 +190,71 @@ const Home = () => {
     }
   };
 
+  const [users, setUsers] = useState([]);
+
+  const fetchUsers = async () => {
+    const currentUserUid = firebase.auth().currentUser.uid; // Get current user's UID
+
+    const ref = firebase
+      .app()
+      .database(database_path)
+      .ref('users')
+      .orderByChild('uid');
+
+    try {
+      const snapshot = await ref.once('value');
+      if (snapshot.exists()) {
+        const userListObject = snapshot.val();
+        const userList = Object.keys(userListObject)
+          .map(key => ({
+            id: key, // Optional: Keeping the unique ID
+            ...userListObject[key],
+          }))
+          .filter(user => user.id !== currentUserUid); // Exclude the current user
+
+        setUsers(userList);
+      } else {
+        console.log('No users found.');
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (isRequestSubmit == 1) {
+      fetchUsers();
+    } else {
+      fetchUsers();
+    }
+  }, [isRequestSubmit]);
+
+  const renderTeamMember = ({item}) => (
+    <View style={styles2.teamMemberContainer}>
+      <Text style={styles2.teamMemberName}>{item.fullname}</Text>
+      <TouchableOpacity
+        onPress={() => {
+          if (inputs.accepted_by_uid == item.id) {
+            setInputs({accepted_by_uid: null});
+          } else {
+            setInputs({accepted_by_uid: item.id});
+          }
+        }}
+        style={{
+          width: 100,
+          height: 30,
+          backgroundColor: '#FD932F',
+          justifyContent: 'center',
+          alignItems: 'center',
+        }}>
+        <Text style={{color: 'white', fontSize: 16}}>
+          {' '}
+          {inputs.accepted_by_uid == item.id ? 'Selected' : 'Add'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <SafeAreaView style={{flex: 1, backgroundColor: 'white'}}>
       <View style={styles.profileviewStyleview}>
@@ -201,7 +270,7 @@ const Home = () => {
         </View>
       </View>
 
-      {isRequestSubmit == 2 ? (
+      {isRequestSubmit == 3 ? (
         <>
           <View style={styles.MainView}>
             <Text style={[styles.SigninText, {marginBottom: 20}]}>
@@ -266,8 +335,8 @@ const Home = () => {
                 disabled={loading}
                 onPress={validate}
                 style={styles.btnsignup}>
-                <Text style={{color: 'white', fontWeight: '800', fontSize: 20}}>
-                  {loading ? 'Loading...' : 'Send Request'}
+                <Text style={{color: 'white', fontWeight: '800', fontSize: 14}}>
+                  {loading ? 'Loading...' : 'Select Team Member'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -276,7 +345,54 @@ const Home = () => {
       ) : (
         <></>
       )}
+
       {isRequestSubmit == 1 ? (
+        <>
+          <View style={styles2.container}>
+            <Text style={styles2.title}>
+              Select Team Member Whom you want to send break request
+            </Text>
+            <FlatList
+              data={users}
+              renderItem={renderTeamMember}
+              keyExtractor={item => item.id} // Assuming each member has a unique id
+            />
+            <View style={{gap: 10}}>
+              <TouchableOpacity
+                disabled={loading}
+                onPress={() => {
+                  if (inputs.accepted_by_uid == null) {
+                    showAlert(
+                      'You need to select team member in order to send the request!',
+                      'danger',
+                    );
+                    return;
+                  }
+                  handleSubmit();
+                }}
+                style={[styles.btnsignup, {height: 50}]}>
+                <Text style={{color: 'white', fontWeight: '800', fontSize: 14}}>
+                  {loading ? 'Loading...' : 'Submit Request'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                disabled={loading}
+                onPress={() => {
+                  setIsRequestSubmit(0);
+                }}
+                style={[styles.btnsignup, {height: 50}]}>
+                <Text style={{color: 'white', fontWeight: '800', fontSize: 14}}>
+                  Go Back
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </>
+      ) : (
+        <></>
+      )}
+
+      {isRequestSubmit == 2 ? (
         <>
           <View style={styles.MainView}>
             <Text style={[styles.SigninText, {textAlign: 'center'}]}>
@@ -354,5 +470,40 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#FD932F',
+  },
+});
+
+const styles2 = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f0f0f0',
+    padding: 20,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#116363',
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    padding: 10,
+    borderRadius: 5,
+    marginBottom: 10,
+  },
+  teamMemberContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  teamMemberImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginRight: 10,
+  },
+  teamMemberName: {
+    flex: 1,
   },
 });

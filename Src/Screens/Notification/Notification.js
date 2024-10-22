@@ -37,7 +37,9 @@ const NotificationItem = ({item, onApprove}) => {
 const Notification = () => {
   const [data, setData] = useState([]);
 
-  const fetchBreakRequest = async () => {
+  const fetchBreakRequest = () => {
+    const currentUserUid = firebase.auth().currentUser.uid; // Get current user's UID
+
     const ref = firebase
       .app()
       .database(database_path)
@@ -45,43 +47,59 @@ const Notification = () => {
       .orderByChild('status')
       .equalTo('pending'); // Filter by 'pending' status
 
-    try {
-      const snapshot = await ref.once('value');
-      if (snapshot.exists()) {
-        const breakRequests = snapshot.val();
-        const sortedBreakRequests = Object.values(breakRequests)
-          .filter(breakRequest => breakRequest.createdAt) // Ensure createdAt exists
-          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); // Sort by createdAt in descending order
+    // Listen to the 'value' event for real-time updates
+    ref.on(
+      'value',
+      async snapshot => {
+        if (snapshot.exists()) {
+          const breakRequests = snapshot.val();
 
-        // Fetch user data for each break request
-        const breakRequestsWithUserData = await Promise.all(
-          sortedBreakRequests.map(async request => {
-            const userSnapshot = await firebase
-              .app()
-              .database(database_path)
-              .ref(`users/${request.uid}`)
-              .once('value');
+          // Filter break requests by 'accepted_by_uid' and ensure 'createdAt' exists
+          const filteredBreakRequests = Object.values(breakRequests)
+            .filter(
+              breakRequest =>
+                breakRequest.accepted_by_uid === currentUserUid &&
+                breakRequest.createdAt,
+            )
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); // Sort by 'createdAt' in descending order
 
-            const userData = userSnapshot.val();
+          // Fetch user data for each filtered break request
+          const breakRequestsWithUserData = await Promise.all(
+            filteredBreakRequests.map(async request => {
+              const userSnapshot = await firebase
+                .app()
+                .database(database_path)
+                .ref(`users/${request.uid}`)
+                .once('value');
 
-            return {
-              ...request,
-              user: userData, // Add user data to the request object
-            };
-          }),
-        );
+              const userData = userSnapshot.val();
 
-        setData(breakRequestsWithUserData);
-        console.log(breakRequestsWithUserData); // Handle the sorted data as needed
-      } else {
-        console.log('No pending break requests found.');
-      }
-    } catch (error) {
-      console.error('Error fetching data:', error);
-    }
+              return {
+                ...request,
+                user: userData, // Add user data to the request object
+              };
+            }),
+          );
+
+          setData(breakRequestsWithUserData);
+          console.log(breakRequestsWithUserData); // Handle the sorted data as needed
+        } else {
+          console.log('No pending break requests found.');
+          setData([]); // Clear the data if no break requests are found
+        }
+      },
+      error => {
+        console.error('Error fetching data:', error);
+      },
+    );
   };
+
   useEffect(() => {
     fetchBreakRequest();
+
+    // Cleanup the listener when the component unmounts
+    return () =>
+      firebase.app().database(database_path).ref('break_times').off('value');
   }, []);
 
   const notificationsData = [

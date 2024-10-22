@@ -78,6 +78,7 @@ const BreakRecords = () => {
       console.error('Error fetching data:', error);
     }
   };
+
   useEffect(() => {
     fetchBreakRequest();
   }, []);
