@@ -32,7 +32,7 @@ const Home = () => {
       break_duration: '',
       break_area: '',
       notes: '',
-      accepted_by_uid: '',
+      accepted_by_uid: [],
     });
 
   const validate = () => {
@@ -123,6 +123,11 @@ const Home = () => {
   }, []);
 
   const handleSubmit = async () => {
+    if (!inputs.accepted_by_uid || inputs.accepted_by_uid.length === 0) {
+      showAlert('Select at least one team member!', 'danger');
+      return;
+    }
+
     setLoading(true);
     try {
       const newBreakRequest = {
@@ -133,7 +138,8 @@ const Home = () => {
           .child('break_times')
           .push().key, // generate a unique id
         uid: auth().currentUser.uid, // current user submitting the request
-        accepted_by_uid: inputs.accepted_by_uid || null, // initially, no one has accepted it
+        request_send_uids: inputs.accepted_by_uid || [],
+        accepted_by_uid: null, // initially, no one has accepted it
         break_duration: Number(inputs.break_duration),
         break_area: inputs.break_area,
         notes: inputs.notes || null, // notes can be nullable
@@ -229,31 +235,46 @@ const Home = () => {
     }
   }, [isRequestSubmit]);
 
-  const renderTeamMember = ({item}) => (
-    <View style={styles2.teamMemberContainer}>
-      <Text style={styles2.teamMemberName}>{item.fullname}</Text>
-      <TouchableOpacity
-        onPress={() => {
-          if (inputs.accepted_by_uid == item.id) {
-            setInputs({accepted_by_uid: null});
-          } else {
-            setInputs({accepted_by_uid: item.id});
-          }
-        }}
-        style={{
-          width: 100,
-          height: 30,
-          backgroundColor: '#FD932F',
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}>
-        <Text style={{color: 'white', fontSize: 16}}>
-          {' '}
-          {inputs.accepted_by_uid == item.id ? 'Selected' : 'Add'}
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
+  const renderTeamMember = ({item}) => {
+    const isSelected = inputs.accepted_by_uid?.includes(item.id); // Check if item.id is in the array
+
+    return (
+      <View style={styles2.teamMemberContainer}>
+        <Text style={styles2.teamMemberName}>{item.fullname}</Text>
+        <TouchableOpacity
+          onPress={() => {
+            // Check if accepted_by_uid exists and is an array
+            let updatedAcceptedByUid = inputs.accepted_by_uid
+              ? [...inputs.accepted_by_uid]
+              : [];
+
+            if (isSelected) {
+              // If the item.id is already in the array, remove it
+              updatedAcceptedByUid = updatedAcceptedByUid.filter(
+                uid => uid !== item.id,
+              );
+            } else {
+              // If item.id is not in the array, add it
+              updatedAcceptedByUid.push(item.id);
+            }
+
+            // Update the inputs with the new array
+            setInputs({accepted_by_uid: updatedAcceptedByUid});
+          }}
+          style={{
+            width: 100,
+            height: 30,
+            backgroundColor: '#FD932F',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}>
+          <Text style={{color: 'white', fontSize: 16}}>
+            {isSelected ? 'Selected' : 'Add'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView style={{flex: 1, backgroundColor: 'white'}}>

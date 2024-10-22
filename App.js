@@ -29,7 +29,7 @@ function App() {
       const userSnapshot = await firebase
         .app()
         .database(database_path)
-        .ref(`users/${data.uid}`)
+        .ref(`users/${data?.uid}`)
         .once('value');
 
       // Extract the actual data from the snapshot

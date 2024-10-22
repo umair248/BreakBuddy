@@ -54,12 +54,13 @@ const Notification = () => {
         if (snapshot.exists()) {
           const breakRequests = snapshot.val();
 
-          // Filter break requests by 'accepted_by_uid' and ensure 'createdAt' exists
+          // Filter break requests where 'request_send_uids' contains the current user's UID
           const filteredBreakRequests = Object.values(breakRequests)
             .filter(
               breakRequest =>
-                breakRequest.accepted_by_uid === currentUserUid &&
-                breakRequest.createdAt,
+                breakRequest.request_send_uids &&
+                breakRequest.request_send_uids.includes(currentUserUid) && // Check if current user's UID is in request_send_uids
+                breakRequest.createdAt, // Ensure 'createdAt' exists
             )
             .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); // Sort by 'createdAt' in descending order
 
