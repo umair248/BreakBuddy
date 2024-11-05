@@ -304,9 +304,18 @@ const Home = () => {
                 cancelRequest('ended');
               }}
               colors="#116363">
-              {({remainingTime}) => (
+              {({remainingTime}) => {
+                const minutes = Math.floor(remainingTime / 60);
+                const seconds = remainingTime % 60;
+                return (
+                  <Text style={{fontSize: 30}}>
+                    {minutes}:{seconds < 10 ? `0${seconds}` : seconds}
+                  </Text>
+                );
+              }}
+              {/* {({remainingTime}) => (
                 <Text style={{fontSize: 30}}>{remainingTime}</Text>
-              )}
+              )} */}
             </CountdownCircleTimer>
           </View>
         </>
