@@ -7,6 +7,10 @@ import {showAlert} from '../../lib/helpers';
 import moment from 'moment';
 
 const NotificationItem = ({item, onApprove}) => {
+  console.log('USER DATA ');
+
+  console.log(item);
+
   return (
     <View style={styles.notificationContainer}>
       <Text style={styles.teamNameText}>{item?.user?.fullname}</Text>
@@ -16,6 +20,9 @@ const NotificationItem = ({item, onApprove}) => {
       <Text style={styles.teamNameText}>{item?.break_area}</Text>
       <Text style={styles.teamNameText}>
         {moment(item?.createAt).format('Do MMM YYYY, h:mm A')}
+      </Text>
+      <Text style={styles.teamNameText}>
+        Covered By {item?.accepted_user?.fullname}
       </Text>
       <View style={styles.buttonContainer}>
         <View style={styles.rejectButton}>
@@ -41,7 +48,7 @@ const BreakRecords = () => {
       .database(database_path)
       .ref('break_times')
       .orderByChild('uid')
-      .equalTo(auth().currentUser.uid); // Filter by 'pending' status
+      .equalTo(auth().currentUser.uid); // Filter by current user's UID
 
     try {
       const snapshot = await ref.once('value');
@@ -54,25 +61,37 @@ const BreakRecords = () => {
         // Fetch user data for each break request
         const breakRequestsWithUserData = await Promise.all(
           sortedBreakRequests.map(async request => {
-            const userSnapshot = await firebase
+            // Fetch the requesting user's data
+            const requesterSnapshot = await firebase
               .app()
               .database(database_path)
               .ref(`users/${request.uid}`)
               .once('value');
+            const requesterData = requesterSnapshot.val();
 
-            const userData = userSnapshot.val();
+            // Fetch the accepted user's data if the request has been accepted
+            let acceptedUserData = null;
+            if (request.accepted_by_uid) {
+              const acceptedUserSnapshot = await firebase
+                .app()
+                .database(database_path)
+                .ref(`users/${request.accepted_by_uid}`)
+                .once('value');
+              acceptedUserData = acceptedUserSnapshot.val();
+            }
 
             return {
               ...request,
-              user: userData, // Add user data to the request object
+              user: requesterData, // Add requester data to the request object
+              accepted_user: acceptedUserData, // Add accepted user's data if available
             };
           }),
         );
 
         setData(breakRequestsWithUserData);
-        console.log(breakRequestsWithUserData); // Handle the sorted data as needed
+        console.log(breakRequestsWithUserData); // Log or handle the data as needed
       } else {
-        console.log('No pending break requests found.');
+        console.log('No break requests found.');
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -82,11 +101,6 @@ const BreakRecords = () => {
   useEffect(() => {
     fetchBreakRequest();
   }, []);
-
-  const notificationsData = [
-    {time: '01:30 - 02:15 pm', teamName: 'Team Name'},
-    // ... other notifications
-  ];
 
   const handleApprove = async item => {
     try {

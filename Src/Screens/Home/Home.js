@@ -61,6 +61,7 @@ const Home = () => {
     }
   };
 
+  const [acceptedUserName, setAcceptedUserName] = useState(null);
   useEffect(() => {
     // Function to listen for real-time changes
     const listenToBreakRequests = () => {
@@ -91,8 +92,8 @@ const Home = () => {
               setSelectedRequest(lastRequest);
               setIsRequestSubmit(2); // Set to true if last request is pending
             } else if (lastRequest.status === 'accepted') {
+              // Check if the break time has ended
               if (now - acceptAt >= breakDurationMs) {
-                // Update the status in Firebase to 'accepted' and reset `setIsRequestSubmit`
                 await firebase
                   .app()
                   .database(database_path)
@@ -104,6 +105,25 @@ const Home = () => {
               } else {
                 setSelectedRequest(lastRequest);
                 setIsRequestSubmit(3); // Break is ongoing
+
+                // Fetch the full name of the user who accepted the request
+                const acceptedByUid = lastRequest?.accepted_by_uid || null;
+                if (acceptedByUid) {
+                  const userRef = firebase
+                    .app()
+                    .database(database_path)
+                    .ref(`users/${acceptedByUid}`);
+
+                  userRef.once('value', userSnapshot => {
+                    if (userSnapshot.exists()) {
+                      const userData = userSnapshot.val();
+                      console.log('USER DATA');
+                      console.log(userData);
+                      const fullName = userData.fullname; // Adjust if the field name is different
+                      setAcceptedUserName(fullName); // Store the full name in state
+                    }
+                  });
+                }
               }
             } else {
               setIsRequestSubmit(0); // Reset if no pending requests
@@ -121,6 +141,67 @@ const Home = () => {
 
     listenToBreakRequests(); // Start listening when the component is mounted
   }, []);
+
+  // useEffect(() => {
+  //   // Function to listen for real-time changes
+  //   const listenToBreakRequests = () => {
+  //     const uid = auth().currentUser?.uid;
+
+  //     if (uid) {
+  //       const ref = firebase
+  //         .app()
+  //         .database(database_path)
+  //         .ref('break_times')
+  //         .orderByChild('uid')
+  //         .equalTo(uid)
+  //         .limitToLast(1);
+
+  //       // Real-time listener
+  //       ref.on('value', async snapshot => {
+  //         if (snapshot.exists()) {
+  //           const breakRequests = snapshot.val();
+  //           const lastRequest = Object.values(breakRequests)[0]; // Get the latest request
+
+  //           const now = new Date();
+  //           const acceptAt = lastRequest.acceptAt
+  //             ? new Date(lastRequest.acceptAt)
+  //             : null;
+  //           const breakDurationMs = lastRequest.break_duration * 60 * 1000;
+
+  //           if (lastRequest.status === 'pending') {
+  //             setSelectedRequest(lastRequest);
+  //             setIsRequestSubmit(2); // Set to true if last request is pending
+  //           } else if (lastRequest.status === 'accepted') {
+  //             if (now - acceptAt >= breakDurationMs) {
+  //               // Update the status in Firebase to 'accepted' and reset `setIsRequestSubmit`
+  //               await firebase
+  //                 .app()
+  //                 .database(database_path)
+  //                 .ref(`break_times/${lastRequest.id}`)
+  //                 .update({
+  //                   status: 'ended',
+  //                 });
+  //               setIsRequestSubmit(0); // Reset request submission
+  //             } else {
+  //               setSelectedRequest(lastRequest);
+  //               setIsRequestSubmit(3); // Break is ongoing
+  //             }
+  //           } else {
+  //             setIsRequestSubmit(0); // Reset if no pending requests
+  //           }
+  //         } else {
+  //           setIsRequestSubmit(0); // Reset if no requests found
+  //         }
+  //         setLoading(false); // Stop loading after data is retrieved
+  //       });
+
+  //       // Clean up the listener when component unmounts
+  //       return () => ref.off();
+  //     }
+  //   };
+
+  //   listenToBreakRequests(); // Start listening when the component is mounted
+  // }, []);
 
   const handleSubmit = async () => {
     if (!inputs.accepted_by_uid || inputs.accepted_by_uid.length === 0) {
@@ -294,8 +375,11 @@ const Home = () => {
       {isRequestSubmit == 3 ? (
         <>
           <View style={styles.MainView}>
-            <Text style={[styles.SigninText, {marginBottom: 20}]}>
+            <Text style={[styles.SigninText, {marginBottom: 5}]}>
               Break Count-down
+            </Text>
+            <Text style={[styles.SigninText, {marginBottom: 20}]}>
+              Request accepted by {acceptedUserName || ''}
             </Text>
             <CountdownCircleTimer
               isPlaying={true}
