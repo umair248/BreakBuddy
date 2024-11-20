@@ -7,6 +7,7 @@ import {
   View,
   Image,
   FlatList,
+  Alert,
 } from 'react-native';
 import React, {useEffect, useState} from 'react';
 import {
@@ -21,6 +22,7 @@ import {database_path} from '../../services/apiPath';
 import auth from '@react-native-firebase/auth';
 import {CountdownCircleTimer} from 'react-native-countdown-circle-timer';
 import {showAlert} from '../../lib/helpers';
+import messaging from '@react-native-firebase/messaging';
 
 const Home = () => {
   const user = useAppSelector(state => state.user.user);
@@ -34,6 +36,86 @@ const Home = () => {
       notes: '',
       accepted_by_uid: [],
     });
+
+  const getAndStoreToken = async () => {
+    try {
+      // Get the FCM token
+      const fcmToken = await messaging().getToken();
+      if (fcmToken) {
+        console.log('FCM Token:', fcmToken);
+
+        // Save the token in the Realtime Database
+        const uid = auth().currentUser?.uid;
+        if (uid) {
+          await firebase
+            .app()
+            .database(database_path)
+            .ref(`users/${uid}`)
+            .update({fcmToken});
+          console.log('FCM Token saved successfully.');
+        } else {
+          console.log('User is not authenticated.');
+        }
+      } else {
+        console.log('Failed to get FCM token.');
+      }
+    } catch (error) {
+      console.error('Error fetching or saving FCM token:', error);
+    }
+  };
+
+  const requestPushNotificationPermission = async () => {
+    const authStatus = await messaging().hasPermission();
+
+    console.log('NOTIFICATION LOG');
+    console.log(authStatus);
+
+    if (
+      authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+      authStatus === messaging.AuthorizationStatus.PROVISIONAL
+    ) {
+      console.log('Push notifications are already enabled.');
+      return;
+    }
+
+    // Show Alert Dialog
+    Alert.alert(
+      'Enable Notifications',
+      'Would you like to enable push notifications for break alerts?',
+      [
+        {
+          text: 'Disallow',
+          onPress: () => console.log('Push notifications disallowed'),
+          style: 'cancel',
+        },
+        {
+          text: 'Allow',
+          onPress: async () => {
+            try {
+              const status = await messaging().requestPermission();
+              if (status === messaging.AuthorizationStatus.AUTHORIZED) {
+                console.log('Push notifications enabled.');
+                await getAndStoreToken(); // Fetch and store token after enabling
+              } else {
+                console.log('Push notifications denied.');
+              }
+            } catch (error) {
+              console.error(
+                'Error requesting push notification permission:',
+                error,
+              );
+            }
+          },
+        },
+      ],
+      {cancelable: false},
+    );
+  };
+
+  // Example usage
+  useEffect(() => {
+    requestPushNotificationPermission();
+  }, []);
 
   const validate = () => {
     setLoading(true);
@@ -357,6 +439,28 @@ const Home = () => {
     );
   };
 
+  const [duration, setDuration] = useState(0); // State to store remaining duration
+  useEffect(() => {
+    if (
+      isRequestSubmit === 3 &&
+      selectedRequest?.break_duration &&
+      selectedRequest?.acceptAt
+    ) {
+      const acceptAt = new Date(selectedRequest.acceptAt).getTime(); // Convert acceptAt to timestamp
+      const now = Date.now(); // Current timestamp
+      const totalDuration = selectedRequest.break_duration * 60; // Total duration in seconds
+      const elapsedTime = Math.floor((now - acceptAt) / 1000); // Elapsed time in seconds
+      const remainingDuration = Math.max(totalDuration - elapsedTime, 0); // Ensure non-negative duration
+
+      setDuration(remainingDuration); // Update the state with the calculated duration
+
+      // If no time is left, end the request immediately
+      if (remainingDuration <= 0) {
+        cancelRequest('ended');
+      }
+    }
+  }, [isRequestSubmit, selectedRequest, cancelRequest]);
+
   return (
     <SafeAreaView style={{flex: 1, backgroundColor: 'white'}}>
       <View style={styles.profileviewStyleview}>
@@ -376,14 +480,15 @@ const Home = () => {
         <>
           <View style={styles.MainView}>
             <Text style={[styles.SigninText, {marginBottom: 5}]}>
-              Break Count-down
+              Break Request
             </Text>
             <Text style={[styles.SigninText, {marginBottom: 20}]}>
-              Request accepted by {acceptedUserName || ''}
+              Accepted by {acceptedUserName || ''}
             </Text>
             <CountdownCircleTimer
               isPlaying={true}
-              duration={selectedRequest?.break_duration * 60}
+              // duration={selectedRequest?.break_duration * 60}
+              duration={duration}
               onComplete={() => {
                 cancelRequest('ended');
               }}
@@ -397,9 +502,6 @@ const Home = () => {
                   </Text>
                 );
               }}
-              {/* {({remainingTime}) => (
-                <Text style={{fontSize: 30}}>{remainingTime}</Text>
-              )} */}
             </CountdownCircleTimer>
           </View>
         </>
