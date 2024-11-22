@@ -13,9 +13,9 @@ const NotificationItem = ({item, onApprove}) => {
       <View style={styles.timeContainer}>
         <Text style={styles.timeText}>{item.break_duration} Minutes Break</Text>
       </View>
-      <Text style={styles.teamNameText}>{item?.break_area}</Text>
+      <Text style={styles.teamNameText}>Break Area: {item?.break_area}</Text>
       <Text style={styles.teamNameText}>
-        {moment(item?.createAt).format('Do MMM YYYY, h:mm A')}
+        Requested On: {moment(item?.createAt).format('h:mm A, Do MMM YYYY')}
       </Text>
       <View style={styles.buttonContainer}>
         <TouchableOpacity
@@ -34,7 +34,7 @@ const NotificationItem = ({item, onApprove}) => {
   );
 };
 
-const Notification = () => {
+const Notification = ({navigation}) => {
   const [data, setData] = useState([]);
 
   const fetchBreakRequest = () => {
@@ -121,6 +121,9 @@ const Notification = () => {
         });
       showAlert('Request Accepted!');
       fetchBreakRequest();
+      navigation.navigate('BreakRecords', {
+        viewModeRequest: 'acceptedRequests',
+      });
     } catch (error) {
       console.log(error);
       // Handle errors

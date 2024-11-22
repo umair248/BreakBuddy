@@ -8,8 +8,10 @@ import {
   Image,
   FlatList,
   Alert,
+  PermissionsAndroid,
+  Platform,
 } from 'react-native';
-import React, {useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useState} from 'react';
 import {
   widthPercentageToDP as wp,
   heightPercentageToDP as hp,
@@ -23,6 +25,8 @@ import auth from '@react-native-firebase/auth';
 import {CountdownCircleTimer} from 'react-native-countdown-circle-timer';
 import {showAlert} from '../../lib/helpers';
 import messaging from '@react-native-firebase/messaging';
+import {useFocusEffect} from '@react-navigation/native';
+import moment from 'moment';
 
 const Home = () => {
   const user = useAppSelector(state => state.user.user);
@@ -65,51 +69,69 @@ const Home = () => {
   };
 
   const requestPushNotificationPermission = async () => {
-    const authStatus = await messaging().hasPermission();
+    if (Platform.OS === 'android' && Platform.Version >= 33) {
+      // Explicitly request POST_NOTIFICATIONS permission for Android 13+
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+        {
+          title: 'Notification Permission',
+          message:
+            'This app needs permission to send you push notifications for break alerts.',
+          buttonPositive: 'Allow',
+          buttonNegative: 'Deny',
+        },
+      );
 
-    console.log('NOTIFICATION LOG');
-    console.log(authStatus);
-
-    if (
-      authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-      authStatus === messaging.AuthorizationStatus.PROVISIONAL
-    ) {
-      console.log('Push notifications are already enabled.');
-      return;
+      if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+        console.log('Notification permission granted.');
+        await getAndStoreToken();
+      } else {
+        console.log('Notification permission denied.');
+      }
+    } else {
+      // For Android 32 and below or iOS
+      const authStatus = await messaging().hasPermission();
+      if (
+        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+        authStatus === messaging.AuthorizationStatus.PROVISIONAL
+      ) {
+        console.log('Push notifications are already enabled.');
+        await getAndStoreToken();
+      } else {
+        // Show Alert Dialog for iOS or older Android
+        Alert.alert(
+          'Enable Notifications',
+          'Would you like to enable push notifications for break alerts?',
+          [
+            {
+              text: 'Disallow',
+              onPress: () => console.log('Push notifications disallowed'),
+              style: 'cancel',
+            },
+            {
+              text: 'Allow',
+              onPress: async () => {
+                try {
+                  const status = await messaging().requestPermission();
+                  if (status === messaging.AuthorizationStatus.AUTHORIZED) {
+                    console.log('Push notifications enabled.');
+                    await getAndStoreToken();
+                  } else {
+                    console.log('Push notifications denied.');
+                  }
+                } catch (error) {
+                  console.error(
+                    'Error requesting push notification permission:',
+                    error,
+                  );
+                }
+              },
+            },
+          ],
+          {cancelable: false},
+        );
+      }
     }
-
-    // Show Alert Dialog
-    Alert.alert(
-      'Enable Notifications',
-      'Would you like to enable push notifications for break alerts?',
-      [
-        {
-          text: 'Disallow',
-          onPress: () => console.log('Push notifications disallowed'),
-          style: 'cancel',
-        },
-        {
-          text: 'Allow',
-          onPress: async () => {
-            try {
-              const status = await messaging().requestPermission();
-              if (status === messaging.AuthorizationStatus.AUTHORIZED) {
-                console.log('Push notifications enabled.');
-                await getAndStoreToken(); // Fetch and store token after enabling
-              } else {
-                console.log('Push notifications denied.');
-              }
-            } catch (error) {
-              console.error(
-                'Error requesting push notification permission:',
-                error,
-              );
-            }
-          },
-        },
-      ],
-      {cancelable: false},
-    );
   };
 
   // Example usage
@@ -144,146 +166,87 @@ const Home = () => {
   };
 
   const [acceptedUserName, setAcceptedUserName] = useState(null);
-  useEffect(() => {
-    // Function to listen for real-time changes
-    const listenToBreakRequests = () => {
-      const uid = auth().currentUser?.uid;
+  useFocusEffect(
+    useCallback(() => {
+      // Function to listen for real-time changes
+      const listenToBreakRequests = () => {
+        const uid = auth().currentUser?.uid;
 
-      if (uid) {
-        const ref = firebase
-          .app()
-          .database(database_path)
-          .ref('break_times')
-          .orderByChild('uid')
-          .equalTo(uid)
-          .limitToLast(1);
+        if (uid) {
+          const ref = firebase
+            .app()
+            .database(database_path)
+            .ref('break_times')
+            .orderByChild('uid')
+            .equalTo(uid)
+            .limitToLast(1);
 
-        // Real-time listener
-        ref.on('value', async snapshot => {
-          if (snapshot.exists()) {
-            const breakRequests = snapshot.val();
-            const lastRequest = Object.values(breakRequests)[0]; // Get the latest request
+          // Real-time listener
+          ref.on('value', async snapshot => {
+            if (snapshot.exists()) {
+              const breakRequests = snapshot.val();
+              const lastRequest = Object.values(breakRequests)[0]; // Get the latest request
 
-            const now = new Date();
-            const acceptAt = lastRequest.acceptAt
-              ? new Date(lastRequest.acceptAt)
-              : null;
-            const breakDurationMs = lastRequest.break_duration * 60 * 1000;
+              const now = new Date();
+              const acceptAt = lastRequest.acceptAt
+                ? new Date(lastRequest.acceptAt)
+                : null;
+              const breakDurationMs = lastRequest.break_duration * 60 * 1000;
 
-            if (lastRequest.status === 'pending') {
-              setSelectedRequest(lastRequest);
-              setIsRequestSubmit(2); // Set to true if last request is pending
-            } else if (lastRequest.status === 'accepted') {
-              // Check if the break time has ended
-              if (now - acceptAt >= breakDurationMs) {
-                await firebase
-                  .app()
-                  .database(database_path)
-                  .ref(`break_times/${lastRequest.id}`)
-                  .update({
-                    status: 'ended',
-                  });
-                setIsRequestSubmit(0); // Reset request submission
-              } else {
+              if (lastRequest.status === 'pending') {
                 setSelectedRequest(lastRequest);
-                setIsRequestSubmit(3); // Break is ongoing
-
-                // Fetch the full name of the user who accepted the request
-                const acceptedByUid = lastRequest?.accepted_by_uid || null;
-                if (acceptedByUid) {
-                  const userRef = firebase
+                setIsRequestSubmit(2); // Set to true if last request is pending
+              } else if (lastRequest.status === 'accepted') {
+                // Check if the break time has ended
+                if (now - acceptAt >= breakDurationMs) {
+                  await firebase
                     .app()
                     .database(database_path)
-                    .ref(`users/${acceptedByUid}`);
+                    .ref(`break_times/${lastRequest.id}`)
+                    .update({
+                      status: 'ended',
+                    });
+                  setIsRequestSubmit(0); // Reset request submission
+                } else {
+                  setSelectedRequest(lastRequest);
+                  setIsRequestSubmit(3); // Break is ongoing
 
-                  userRef.once('value', userSnapshot => {
-                    if (userSnapshot.exists()) {
-                      const userData = userSnapshot.val();
-                      console.log('USER DATA');
-                      console.log(userData);
-                      const fullName = userData.fullname; // Adjust if the field name is different
-                      setAcceptedUserName(fullName); // Store the full name in state
-                    }
-                  });
+                  // Fetch the full name of the user who accepted the request
+                  const acceptedByUid = lastRequest?.accepted_by_uid || null;
+                  if (acceptedByUid) {
+                    const userRef = firebase
+                      .app()
+                      .database(database_path)
+                      .ref(`users/${acceptedByUid}`);
+
+                    userRef.once('value', userSnapshot => {
+                      if (userSnapshot.exists()) {
+                        const userData = userSnapshot.val();
+                        console.log('USER DATA');
+                        console.log(userData);
+                        const fullName = userData.fullname; // Adjust if the field name is different
+                        setAcceptedUserName(fullName); // Store the full name in state
+                      }
+                    });
+                  }
                 }
+              } else {
+                setIsRequestSubmit(0); // Reset if no pending requests
               }
             } else {
-              setIsRequestSubmit(0); // Reset if no pending requests
+              setIsRequestSubmit(0); // Reset if no requests found
             }
-          } else {
-            setIsRequestSubmit(0); // Reset if no requests found
-          }
-          setLoading(false); // Stop loading after data is retrieved
-        });
+            setLoading(false); // Stop loading after data is retrieved
+          });
 
-        // Clean up the listener when component unmounts
-        return () => ref.off();
-      }
-    };
+          // Clean up the listener when component unmounts
+          return () => ref.off();
+        }
+      };
 
-    listenToBreakRequests(); // Start listening when the component is mounted
-  }, []);
-
-  // useEffect(() => {
-  //   // Function to listen for real-time changes
-  //   const listenToBreakRequests = () => {
-  //     const uid = auth().currentUser?.uid;
-
-  //     if (uid) {
-  //       const ref = firebase
-  //         .app()
-  //         .database(database_path)
-  //         .ref('break_times')
-  //         .orderByChild('uid')
-  //         .equalTo(uid)
-  //         .limitToLast(1);
-
-  //       // Real-time listener
-  //       ref.on('value', async snapshot => {
-  //         if (snapshot.exists()) {
-  //           const breakRequests = snapshot.val();
-  //           const lastRequest = Object.values(breakRequests)[0]; // Get the latest request
-
-  //           const now = new Date();
-  //           const acceptAt = lastRequest.acceptAt
-  //             ? new Date(lastRequest.acceptAt)
-  //             : null;
-  //           const breakDurationMs = lastRequest.break_duration * 60 * 1000;
-
-  //           if (lastRequest.status === 'pending') {
-  //             setSelectedRequest(lastRequest);
-  //             setIsRequestSubmit(2); // Set to true if last request is pending
-  //           } else if (lastRequest.status === 'accepted') {
-  //             if (now - acceptAt >= breakDurationMs) {
-  //               // Update the status in Firebase to 'accepted' and reset `setIsRequestSubmit`
-  //               await firebase
-  //                 .app()
-  //                 .database(database_path)
-  //                 .ref(`break_times/${lastRequest.id}`)
-  //                 .update({
-  //                   status: 'ended',
-  //                 });
-  //               setIsRequestSubmit(0); // Reset request submission
-  //             } else {
-  //               setSelectedRequest(lastRequest);
-  //               setIsRequestSubmit(3); // Break is ongoing
-  //             }
-  //           } else {
-  //             setIsRequestSubmit(0); // Reset if no pending requests
-  //           }
-  //         } else {
-  //           setIsRequestSubmit(0); // Reset if no requests found
-  //         }
-  //         setLoading(false); // Stop loading after data is retrieved
-  //       });
-
-  //       // Clean up the listener when component unmounts
-  //       return () => ref.off();
-  //     }
-  //   };
-
-  //   listenToBreakRequests(); // Start listening when the component is mounted
-  // }, []);
+      listenToBreakRequests(); // Start listening when the component is mounted
+    }, []),
+  );
 
   const handleSubmit = async () => {
     if (!inputs.accepted_by_uid || inputs.accepted_by_uid.length === 0) {
@@ -446,10 +409,11 @@ const Home = () => {
       selectedRequest?.break_duration &&
       selectedRequest?.acceptAt
     ) {
-      const acceptAt = new Date(selectedRequest.acceptAt).getTime(); // Convert acceptAt to timestamp
-      const now = Date.now(); // Current timestamp
+      const acceptAt = moment(selectedRequest.acceptAt); // Use moment to parse acceptAt
+      const now = moment(); // Get current time as a moment object
       const totalDuration = selectedRequest.break_duration * 60; // Total duration in seconds
-      const elapsedTime = Math.floor((now - acceptAt) / 1000); // Elapsed time in seconds
+      const elapsedTime = now.diff(acceptAt, 'seconds'); // Elapsed time in seconds
+
       const remainingDuration = Math.max(totalDuration - elapsedTime, 0); // Ensure non-negative duration
 
       setDuration(remainingDuration); // Update the state with the calculated duration
