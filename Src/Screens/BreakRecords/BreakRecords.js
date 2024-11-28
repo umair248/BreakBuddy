@@ -5,7 +5,11 @@ import {database_path} from '../../services/apiPath';
 import auth from '@react-native-firebase/auth';
 import {showAlert} from '../../lib/helpers';
 import moment from 'moment';
-import notifee from '@notifee/react-native';
+import notifee, {
+  AndroidImportance,
+  AndroidVisibility,
+  TriggerType,
+} from '@notifee/react-native';
 
 const NotificationItem = ({item, onApprove, viewMode = false}) => {
   const [countDown, setCountDown] = useState('');
@@ -16,31 +20,25 @@ const NotificationItem = ({item, onApprove, viewMode = false}) => {
         'minutes',
       );
       // // Schedule a notification for when the break ends
-      // async function scheduleBreakEndNotification() {
-      //   const trigger = {
-      //     type: TriggerType.TIMESTAMP,
-      //     timestamp: breakEndTime.toDate().getTime(), // Convert breakEndTime to timestamp in milliseconds
-      //   };
+      async function scheduleBreakEndNotification() {
+        const trigger = {
+          type: TriggerType.TIMESTAMP,
+          timestamp: breakEndTime.toDate().getTime(), // Convert breakEndTime to timestamp in milliseconds
+        };
 
-      //   await notifee.createTriggerNotification(
-      //     {
-      //       title: 'Break Ended',
-      //       body: 'Break Time is over!',
-      //       android: {
-      //         channelId: 'default',
-      //         sound: 'default', // Use default or custom sound
-      //         vibrationPattern: [500, 500, 500], // Vibrates three times
-      //         smallIcon: 'ic_launcher', // Replace with your app's small icon
-      //         importance: notifee.AndroidImportance.HIGH,
-      //       },
-      //       ios: {
-      //         sound: 'default', // Use default or custom sound
-      //       },
-      //     },
-      //   );
-      // }
+        await notifee.createTriggerNotification(
+          {
+            title: 'Break Ended',
+            body: 'Break Time is over!',
+            android: {
+              channelId: 'break-default',
+            },
+          },
+          trigger,
+        );
+      }
 
-      // scheduleBreakEndNotification(); // Call the scheduling function
+      scheduleBreakEndNotification(); // Call the scheduling function
 
       // Real-time countdown logic
       const interval = setInterval(async () => {
@@ -56,20 +54,19 @@ const NotificationItem = ({item, onApprove, viewMode = false}) => {
         } else {
           setCountDown(null);
           clearInterval(interval); // Stop the interval once the break has ended
-          await notifee.createTriggerNotification({
-            title: 'Break Ended',
-            body: 'Break Time is over!',
-            android: {
-              channelId: 'default',
-              sound: 'default', // Use default or custom sound
-              vibrationPattern: [500, 500, 500], // Vibrates three times
-              smallIcon: 'ic_launcher', // Replace with your app's small icon
-              importance: notifee.AndroidImportance.HIGH,
-            },
-            ios: {
-              sound: 'default', // Use default or custom sound
-            },
-          });
+          // await notifee.createTriggerNotification({
+          //   title: 'Break Ended',
+          //   body: 'Break Time is over!',
+          //   android: {
+          //     channelId: 'default',
+          //     sound: 'default', // Use default or custom sound
+          //     vibrationPattern: [500, 500, 500], // Vibrates three times
+          //     smallIcon: 'ic_launcher', // Replace with your app's small icon
+          //   },
+          //   ios: {
+          //     sound: 'default', // Use default or custom sound
+          //   },
+          // });
         }
       }, 1000); // Update every second
 

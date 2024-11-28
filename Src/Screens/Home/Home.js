@@ -27,6 +27,10 @@ import {showAlert} from '../../lib/helpers';
 import messaging from '@react-native-firebase/messaging';
 import {useFocusEffect} from '@react-navigation/native';
 import moment from 'moment';
+import notifee, {
+  AndroidImportance,
+  AndroidVisibility,
+} from '@notifee/react-native';
 
 const Home = () => {
   const user = useAppSelector(state => state.user.user);
@@ -65,6 +69,20 @@ const Home = () => {
       }
     } catch (error) {
       console.error('Error fetching or saving FCM token:', error);
+    }
+  };
+
+  const playDefaultSound = async () => {
+    try {
+      // Create a channel for sound-only notifications
+      await notifee.createChannel({
+        id: 'break-default',
+        name: 'Default Channel',
+        importance: AndroidImportance.HIGH, // Ensures the notification is shown
+        visibility: AndroidVisibility.PUBLIC, // Ensures visibility of notification text
+      });
+    } catch (error) {
+      console.error('Error playing default sound:', error);
     }
   };
 
@@ -137,6 +155,7 @@ const Home = () => {
   // Example usage
   useEffect(() => {
     requestPushNotificationPermission();
+    playDefaultSound();
   }, []);
 
   const validate = () => {
