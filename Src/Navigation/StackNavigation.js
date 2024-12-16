@@ -12,6 +12,8 @@ import BreakRecords from '../Screens/BreakRecords/BreakRecords';
 import Notification from '../Screens/Notification/Notification';
 import Profile from '../Screens/Profile/Profile';
 import {useAppSelector} from '../services/redux/hooks';
+import TimeRecords from '../Screens/TimeRecords/TimeRecords';
+import AddTimeRecord from '../Screens/AddTimeRecord/AddTimeRecord';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -41,10 +43,14 @@ const HomeTab = () => {
         tabBarIcon: () => null, // Hide the icons
         headerShown: false,
       })}>
-      {/* <Tab.Screen name="Team" component={Team} options={{headerShown: false}} /> */}
       <Tab.Screen
         name="BreakRecords"
         component={BreakRecords}
+        options={{headerShown: false}}
+      />
+      <Tab.Screen
+        name="Time"
+        component={TimeRecords}
         options={{headerShown: false}}
       />
       <Tab.Screen name="Home" component={Home} options={{headerShown: false}} />
@@ -72,11 +78,18 @@ const RootNavigator = () => {
         options={{headerShown: false}}
       />
       {user ? (
-        <Stack.Screen
-          name="Root"
-          component={HomeTab}
-          options={{headerShown: false}}
-        />
+        <>
+          <Stack.Screen
+            name="Root"
+            component={HomeTab}
+            options={{headerShown: false}}
+          />
+          <Stack.Screen
+            name="AddTimeRecord"
+            component={AddTimeRecord}
+            options={{headerShown: true, title: ''}}
+          />
+        </>
       ) : (
         <>
           <Stack.Screen
