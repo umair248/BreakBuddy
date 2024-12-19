@@ -1,10 +1,11 @@
-import React, {useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useState} from 'react';
 import {View, Text, StyleSheet, TouchableOpacity} from 'react-native';
 import {firebase} from '@react-native-firebase/database';
 import {database_path} from '../../services/apiPath';
 import auth from '@react-native-firebase/auth';
 import {showAlert} from '../../lib/helpers';
 import moment from 'moment';
+import {useFocusEffect} from '@react-navigation/native';
 
 const NotificationItem = ({item, clockOut}) => {
   // Calculate total time spent if clock_out_date_time exists
@@ -60,45 +61,57 @@ const TimeRecords = ({navigation}) => {
   const [data, setData] = useState([]);
   const [totalTimeSpent, setTotalTimeSpent] = useState(0); // State to store total time spent
 
-  const fetchBreakRequest = () => {
-    try {
-      let ref;
+  useFocusEffect(
+    useCallback(() => {
+      const fetchBreakRequest = () => {
+        const uid = auth().currentUser?.uid;
+        try {
+          const ref = firebase
+            .app()
+            .database(database_path)
+            .ref('time_records')
+            .orderByChild('uid')
+            .equalTo(uid);
 
-      ref = firebase
-        .app()
-        .database(database_path)
-        .ref('time_records')
-        .orderByChild('uid')
-        .equalTo(auth().currentUser.uid);
+          // Set up the listener for real-time updates
+          ref.on('value', snapshot => {
+            if (snapshot.exists()) {
+              const breakRequests = snapshot.val();
 
-      // Set up the listener for real-time updates
-      ref.on('value', async snapshot => {
-        if (snapshot.exists()) {
-          const breakRequests = snapshot.val();
-          const sortedBreakRequests = Object.values(breakRequests)
-            .filter(
-              record => record.clock_in_date_time && record.clock_out_date_time, // Ensure both fields exist
-            )
-            .sort(
-              (a, b) =>
-                new Date(b.clock_in_date_time) - new Date(a.clock_in_date_time),
-            ); // Sort by clock_in_date_time in descending order
+              // Separate records into two categories
+              const allBreakRequests = Object.values(breakRequests).sort(
+                (a, b) =>
+                  new Date(b.clock_in_date_time || 0) -
+                  new Date(a.clock_in_date_time || 0),
+              ); // Sort by clock_in_date_time (use 0 for missing values)
 
-          setData(sortedBreakRequests); // Set the fetched and sorted data
-          calculateTotalTimeSpent(sortedBreakRequests); // Calculate total time spent
-        } else {
-          console.log('No time records found.');
-          setData([]); // Clear data if no records found
-          setTotalTimeSpent(0); // Reset total time spent
+              const validBreakRequests = allBreakRequests.filter(
+                record =>
+                  record.clock_in_date_time && record.clock_out_date_time, // Ensure both fields exist
+              );
+
+              // Set the data for all records (including incomplete ones)
+              setData(allBreakRequests);
+
+              // Calculate total time spent for valid records only
+              calculateTotalTimeSpent(validBreakRequests);
+            } else {
+              console.log('No time records found.');
+              setData([]); // Clear data if no records found
+              setTotalTimeSpent(0); // Reset total time spent
+            }
+          });
+
+          // Return cleanup function to remove the listener
+          return () => ref.off();
+        } catch (error) {
+          console.error('Error fetching data:', error);
         }
-      });
+      };
 
-      // Cleanup function to remove the listener when the component unmounts or `viewMode` changes
-      return () => ref.off();
-    } catch (error) {
-      console.error('Error fetching data:', error);
-    }
-  };
+      fetchBreakRequest();
+    }, []),
+  );
 
   const calculateTotalTimeSpent = records => {
     const totalTime = records.reduce((sum, record) => {
@@ -116,13 +129,6 @@ const TimeRecords = ({navigation}) => {
 
     setTotalTimeSpent(totalTime); // Update state with total time spent
   };
-
-  useEffect(() => {
-    const unsubscribe = fetchBreakRequest();
-
-    // Cleanup listener on component unmount
-    return unsubscribe;
-  }, []);
 
   const handleClockOut = async item => {
     try {
@@ -156,10 +162,6 @@ const TimeRecords = ({navigation}) => {
       </View>
 
       <View style={styles.notificationsList}>
-        {data.map((item, index) => (
-          <NotificationItem key={index} clockOut={handleClockOut} item={item} />
-        ))}
-
         {data.length <= 0 ? (
           <>
             <View style={styles.MainView}>
@@ -169,12 +171,22 @@ const TimeRecords = ({navigation}) => {
             </View>
           </>
         ) : (
-          <></>
+          <>
+            {data.map((item, index) => (
+              <NotificationItem
+                key={index}
+                clockOut={handleClockOut}
+                item={item}
+              />
+            ))}
+          </>
         )}
-        <Text style={styles.totalTime}>
-          Total Time Spent: {Math.floor(totalTimeSpent / 3600)}h{' '}
-          {Math.floor((totalTimeSpent % 3600) / 60)}m
-        </Text>
+        {totalTimeSpent == 0 ? null : (
+          <Text style={styles.totalTime}>
+            Total Time Spent: {Math.floor(totalTimeSpent / 3600)}h{' '}
+            {Math.floor((totalTimeSpent % 3600) / 60)}m
+          </Text>
+        )}
       </View>
     </View>
   );
