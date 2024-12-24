@@ -1,5 +1,11 @@
 import React, {useCallback, useEffect, useState} from 'react';
-import {View, Text, StyleSheet, TouchableOpacity} from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+} from 'react-native';
 import {firebase} from '@react-native-firebase/database';
 import {database_path} from '../../services/apiPath';
 import auth from '@react-native-firebase/auth';
@@ -161,7 +167,7 @@ const TimeRecords = ({navigation}) => {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.notificationsList}>
+      {/* <View style={styles.notificationsList}>
         {data.length <= 0 ? (
           <>
             <View style={styles.MainView}>
@@ -187,7 +193,31 @@ const TimeRecords = ({navigation}) => {
             {Math.floor((totalTimeSpent % 3600) / 60)}m
           </Text>
         )}
-      </View>
+      </View> */}
+
+      <ScrollView style={styles.notificationsList}>
+        {data.length <= 0 ? (
+          <View style={styles.MainView}>
+            <Text style={[styles.SigninText, {textAlign: 'center'}]}>
+              No record found!
+            </Text>
+          </View>
+        ) : (
+          data.map((item, index) => (
+            <NotificationItem
+              key={index}
+              clockOut={handleClockOut}
+              item={item}
+            />
+          ))
+        )}
+        {totalTimeSpent == 0 ? null : (
+          <Text style={styles.totalTime}>
+            Total Time Spent: {Math.floor(totalTimeSpent / 3600)}h{' '}
+            {Math.floor((totalTimeSpent % 3600) / 60)}m
+          </Text>
+        )}
+      </ScrollView>
     </View>
   );
 };
