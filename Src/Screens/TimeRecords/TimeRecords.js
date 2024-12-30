@@ -5,15 +5,37 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Linking,
 } from 'react-native';
+import {
+  widthPercentageToDP as wp,
+  heightPercentageToDP as hp,
+} from 'react-native-responsive-screen';
 import {firebase} from '@react-native-firebase/database';
 import {database_path} from '../../services/apiPath';
 import auth from '@react-native-firebase/auth';
 import {showAlert} from '../../lib/helpers';
 import moment from 'moment';
 import {useFocusEffect} from '@react-navigation/native';
+import storage from '@react-native-firebase/storage';
+import DocumentPicker from 'react-native-document-picker';
+import Papa from 'papaparse';
+import RNFS from 'react-native-fs'; // File system package
 
 const NotificationItem = ({item, clockOut}) => {
+  const [clockOutFile, setClockOutFile] = useState(null);
+  const handleFileSelect = async setFileCallback => {
+    try {
+      const res = await DocumentPicker.pickSingle({
+        type: [DocumentPicker.types.images],
+      });
+      setFileCallback(res);
+    } catch (err) {
+      if (!DocumentPicker.isCancel(err)) {
+        console.error(err);
+      }
+    }
+  };
   // Calculate total time spent if clock_out_date_time exists
   const totalTimeSpent = item?.clock_out_date_time
     ? moment(item?.clock_out_date_time).diff(
@@ -50,14 +72,55 @@ const NotificationItem = ({item, clockOut}) => {
         Total Time Spent:{'  '}
         {formattedTimeSpent}
       </Text>
-      {item?.clock_out_date_time ? null : (
+      {/* Render Downloadable Clock-In Image if Exists */}
+      {item?.clock_in_image_src && (
         <TouchableOpacity
-          style={styles.rejectButton}
-          onPress={() => {
-            clockOut(item);
-          }}>
-          <Text style={styles.buttonText}>CLOCK OUT</Text>
+          style={styles.downloadButton}
+          onPress={() => Linking.openURL(item.clock_in_image_src)}>
+          <Text style={styles.buttonText}>View Clock-In Image</Text>
         </TouchableOpacity>
+      )}
+
+      {/* Render Downloadable Clock-Out Image if Exists */}
+      {item?.clock_out_image_src && (
+        <TouchableOpacity
+          style={styles.downloadButton}
+          onPress={() => Linking.openURL(item.clock_out_image_src)}>
+          <Text style={styles.buttonText}>View Clock-Out Image</Text>
+        </TouchableOpacity>
+      )}
+      {item?.clock_out_date_time ? null : (
+        <>
+          <Text
+            style={[styles.teamNameText, {fontWeight: '700', marginTop: 10}]}>
+            Action
+          </Text>
+          <TouchableOpacity
+            style={[
+              styles.fileButton,
+              clockOutFile && styles.fileButtonSelected, // Adjust styling if file is selected
+            ]}
+            onPress={() => {
+              if (clockOutFile) {
+                setClockOutFile(null); // Reset file if already selected
+              } else {
+                handleFileSelect(setClockOutFile);
+              }
+            }}>
+            <Text>
+              {clockOutFile
+                ? 'Remove Clock Out Image'
+                : 'Select Clock Out Image'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.rejectButton}
+            onPress={() => {
+              clockOut(item, clockOutFile);
+            }}>
+            <Text style={styles.buttonText}>CLOCK OUT</Text>
+          </TouchableOpacity>
+        </>
       )}
     </View>
   );
@@ -136,14 +199,71 @@ const TimeRecords = ({navigation}) => {
     setTotalTimeSpent(totalTime); // Update state with total time spent
   };
 
-  const handleClockOut = async item => {
+  const generateCSV = () => {
+    // Assuming data is passed as a prop or already available
     try {
+      // Process the data into CSV format
+      const csvData = data.map(item => ({
+        Fullname: item?.user?.fullname,
+        Facility: item?.facility_name,
+        Area: item?.area,
+        ClockInTime: moment(item?.clock_in_date_time).format(
+          'h:mm A, Do MMMM YYYY',
+        ),
+        ClockOutTime: item?.clock_out_date_time
+          ? moment(item?.clock_out_date_time).format('h:mm A, Do MMMM YYYY')
+          : 'No Clock Out',
+        TotalTimeSpent: item?.clock_out_date_time
+          ? moment(item?.clock_out_date_time).diff(
+              moment(item?.clock_in_date_time),
+              'minutes',
+            ) + ' minutes'
+          : 'N/A',
+      }));
+
+      // Convert the data to CSV format using PapaParse
+      const csv = Papa.unparse(csvData);
+
+      // Define the file path where the CSV will be saved
+      const path = RNFS.DownloadDirectoryPath + '/time_records.csv'; // Adjust the path if needed
+
+      // Write the CSV data to a file
+      RNFS.writeFile(path, csv, 'utf8')
+        .then(() => {
+          console.log('CSV file saved at:', path);
+          showAlert('CSV Generated and saved!', 'success');
+        })
+        .catch(err => {
+          console.log('Error writing CSV file:', err);
+        });
+    } catch (error) {
+      console.error('Error generating CSV:', error);
+    }
+  };
+
+  const uploadFile = async (file, path) => {
+    if (!file) return null;
+
+    const storageRef = storage().ref(path);
+    await storageRef.putFile(file.uri);
+    return await storageRef.getDownloadURL();
+  };
+
+  const handleClockOut = async (item, isClockOutFile = null) => {
+    try {
+      const clockOutPath = `time_records/${
+        auth().currentUser.uid
+      }/clock_out_${Date.now()}`;
+
+      const clockOutUrl = await uploadFile(isClockOutFile, clockOutPath);
+
       const recordRef = firebase
         .app()
         .database(database_path)
         .ref(`time_records/${item?.id}`);
       await recordRef.update({
         clock_out_date_time: moment().format('YYYY-MM-DD HH:mm:ss'),
+        clock_out_image_src: clockOutUrl || null,
       });
 
       showAlert('Clock-out time updated successfully!', 'success');
@@ -166,34 +286,6 @@ const TimeRecords = ({navigation}) => {
           <Text style={[styles.buttonText]}>Add Time Record</Text>
         </TouchableOpacity>
       </View>
-
-      {/* <View style={styles.notificationsList}>
-        {data.length <= 0 ? (
-          <>
-            <View style={styles.MainView}>
-              <Text style={[styles.SigninText, {textAlign: 'center'}]}>
-                No record found!
-              </Text>
-            </View>
-          </>
-        ) : (
-          <>
-            {data.map((item, index) => (
-              <NotificationItem
-                key={index}
-                clockOut={handleClockOut}
-                item={item}
-              />
-            ))}
-          </>
-        )}
-        {totalTimeSpent == 0 ? null : (
-          <Text style={styles.totalTime}>
-            Total Time Spent: {Math.floor(totalTimeSpent / 3600)}h{' '}
-            {Math.floor((totalTimeSpent % 3600) / 60)}m
-          </Text>
-        )}
-      </View> */}
 
       <ScrollView style={styles.notificationsList}>
         {data.length <= 0 ? (
@@ -218,6 +310,12 @@ const TimeRecords = ({navigation}) => {
           </Text>
         )}
       </ScrollView>
+      {/* Add a button to download the PDF, only if there is data */}
+      {data.length > 0 && (
+        <TouchableOpacity style={styles.downloadButton} onPress={generateCSV}>
+          <Text style={styles.buttonText}>Download CSV</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -326,6 +424,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row', // Align children horizontally
     justifyContent: 'space-between', // Optional: space between elements
     alignItems: 'center', // Optional: vertically center the text
+  },
+  downloadButton: {
+    marginVertical: 5,
+    padding: 10,
+    backgroundColor: '#28A745', // Green background for image buttons
+    borderRadius: 5,
+    alignItems: 'center',
+  },
+  fileButton: {
+    width: wp('80%'),
+    marginBottom: 10,
+    padding: 10,
+    backgroundColor: '#ccc',
+    borderRadius: 5,
+    alignItems: 'center',
+  },
+  fileButtonSelected: {
+    backgroundColor: '#d9534f', // Change to a red color to indicate "remove"
+    paddingHorizontal: 20, // Make the button wider
   },
 });
 

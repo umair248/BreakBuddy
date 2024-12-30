@@ -1,12 +1,11 @@
+import React, {useState} from 'react';
 import {
   SafeAreaView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  FlatList,
 } from 'react-native';
-import React, {useEffect, useState} from 'react';
 import {
   widthPercentageToDP as wp,
   heightPercentageToDP as hp,
@@ -15,22 +14,24 @@ import {useAppSelector} from '../../services/redux/hooks';
 import {useHandleInputs} from '../../hooks/use-handle-input';
 import InputField from '../../components/common/input-field';
 import {firebase} from '@react-native-firebase/database';
-import {database_path} from '../../services/apiPath';
+import storage from '@react-native-firebase/storage';
+import DocumentPicker from 'react-native-document-picker';
 import auth from '@react-native-firebase/auth';
-import {CountdownCircleTimer} from 'react-native-countdown-circle-timer';
-import {showAlert} from '../../lib/helpers';
 import moment from 'moment';
+import {showAlert} from '../../lib/helpers';
+import {database_path} from '../../services/apiPath';
 
 const AddTimeRecord = ({navigation}) => {
   const user = useAppSelector(state => state.user.user);
   const [loading, setLoading] = useState(false);
-  const [isRequestSubmit, setIsRequestSubmit] = useState(0);
-  const [selectedRequest, setSelectedRequest] = useState(null);
   const [inputs, handleInputs, setInputs, errors, handleError] =
     useHandleInputs({
       facility_name: '',
       area: '',
     });
+
+  const [clockInFile, setClockInFile] = useState(null);
+  const [clockOutFile, setClockOutFile] = useState(null);
 
   const validate = () => {
     setLoading(true);
@@ -53,9 +54,41 @@ const AddTimeRecord = ({navigation}) => {
     }
   };
 
+  const handleFileSelect = async setFileCallback => {
+    try {
+      const res = await DocumentPicker.pickSingle({
+        type: [DocumentPicker.types.images],
+      });
+      setFileCallback(res);
+    } catch (err) {
+      if (!DocumentPicker.isCancel(err)) {
+        console.error(err);
+      }
+    }
+  };
+
+  const uploadFile = async (file, path) => {
+    if (!file) return null;
+
+    const storageRef = storage().ref(path);
+    await storageRef.putFile(file.uri);
+    return await storageRef.getDownloadURL();
+  };
+
   const handleSubmit = async () => {
     setLoading(true);
     try {
+      const clockInPath = `time_records/${
+        auth().currentUser.uid
+      }/clock_in_${Date.now()}`;
+      const clockOutPath = `time_records/${
+        auth().currentUser.uid
+      }/clock_out_${Date.now()}`;
+
+      // Upload files if selected
+      const clockInUrl = await uploadFile(clockInFile, clockInPath);
+      const clockOutUrl = await uploadFile(clockOutFile, clockOutPath);
+
       const newBreakRequest = {
         id: firebase
           .app()
@@ -70,6 +103,8 @@ const AddTimeRecord = ({navigation}) => {
         total_time_spent: null,
         clock_in_date_time: moment().format('YYYY-MM-DD HH:mm:ss'),
         clock_out_date_time: null,
+        clock_in_image_src: clockInUrl || null,
+        clock_out_image_src: clockOutUrl || null,
         createdAt: new Date().toISOString(), // capture creation timestamp
       };
 
@@ -125,6 +160,40 @@ const AddTimeRecord = ({navigation}) => {
             error={errors.area}
           />
         </View>
+
+        <TouchableOpacity
+          style={[
+            styles.fileButton,
+            clockInFile && styles.fileButtonSelected, // Adjust styling if file is selected
+          ]}
+          onPress={() => {
+            if (clockInFile) {
+              setClockInFile(null); // Reset file if already selected
+            } else {
+              handleFileSelect(setClockInFile);
+            }
+          }}>
+          <Text>
+            {clockInFile ? 'Remove Clock In Image' : 'Select Clock In Image'}
+          </Text>
+        </TouchableOpacity>
+
+        {/* <TouchableOpacity
+          style={[
+            styles.fileButton,
+            clockOutFile && styles.fileButtonSelected, // Adjust styling if file is selected
+          ]}
+          onPress={() => {
+            if (clockOutFile) {
+              setClockOutFile(null); // Reset file if already selected
+            } else {
+              handleFileSelect(setClockOutFile);
+            }
+          }}>
+          <Text>
+            {clockOutFile ? 'Remove Clock Out Image' : 'Select Clock Out Image'}
+          </Text>
+        </TouchableOpacity> */}
 
         <View style={styles.Viewbtn}>
           <TouchableOpacity
@@ -195,39 +264,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FD932F',
   },
-});
-
-const styles2 = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f0f0f0',
-    padding: 20,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    color: '#116363',
-  },
-  searchInput: {
-    borderWidth: 1,
-    borderColor: '#ccc',
+  fileButton: {
+    width: wp('80%'),
+    marginTop: 10,
     padding: 10,
+    backgroundColor: '#ccc',
     borderRadius: 5,
-    marginBottom: 10,
-  },
-  teamMemberContainer: {
-    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
   },
-  teamMemberImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    marginRight: 10,
-  },
-  teamMemberName: {
-    flex: 1,
+  fileButtonSelected: {
+    backgroundColor: '#d9534f', // Change to a red color to indicate "remove"
+    paddingHorizontal: 20, // Make the button wider
   },
 });
